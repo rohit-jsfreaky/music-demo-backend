@@ -114,7 +114,9 @@ app.get("/demo2", async (req, res) => {
   try {
     const result = await ytmp3(videoUrl);
 
-    const audioUrl = result.audioUrl;
+    console.log("Audio URL:", result.download.url);
+
+    const audioUrl = result.download.url;
 
     return res.json({
       message: audioUrl,
