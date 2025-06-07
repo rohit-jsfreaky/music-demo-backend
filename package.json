@@ -15,6 +15,7 @@
     "@distube/ytdl-core": "^4.16.11",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "hydra_scraper": "^1.0.18",
     "nodemon": "^3.1.10"
   }
 }

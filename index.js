@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import ytdl from "@distube/ytdl-core";
+
+import { ytmp3 } from "hydra_scraper";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -91,7 +93,9 @@ app.get("/demo", async (req, res) => {
     const videoUrl = "http://www.youtube.com/watch?v=aqz-KE-bpKQ"; // Replace with a valid YouTube video URL
     const info = await ytdl.getInfo(videoUrl, { agent });
     // Find the first audio format
-    const audioFormat = info.formats.find(f => f.mimeType && f.mimeType.includes("audio"));
+    const audioFormat = info.formats.find(
+      (f) => f.mimeType && f.mimeType.includes("audio")
+    );
     if (audioFormat) {
       console.log("Audio URL:", audioFormat.url);
       res.json({ audioUrl: audioFormat.url });
@@ -101,5 +105,22 @@ app.get("/demo", async (req, res) => {
   } catch (error) {
     console.error("Error fetching video info:", error);
     res.status(500).json({ error: "Failed to fetch video info" });
+  }
+});
+
+app.get("/demo2", async (req, res) => {
+  const videoUrl = "http://www.youtube.com/watch?v=aqz-KE-bpKQ";
+
+  try {
+    const result = await ytmp3(videoUrl);
+
+    const audioUrl = result.audioUrl;
+
+    return res.json({
+      message: audioUrl,
+    });
+  } catch (error) {
+    console.error("Error in demo2:", error);
+    return res.status(500).json({ error: "Failed to fetch audio URL" });
   }
 });
