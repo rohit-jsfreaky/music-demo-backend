@@ -1,9 +1,9 @@
-const express = require("express");
-const https = require("https");
-const http = require("http");
-const { URL } = require("url");
-const zlib = require("zlib");
-const crypto = require("crypto");
+import express from "express";
+import https from "https";
+import http from "http";
+import { URL } from "url";
+import zlib from "zlib";
+import crypto from "crypto";
 
 const app = express();
 const PORT = 3000;
@@ -11,10 +11,13 @@ const PORT = 3000;
 // Middleware
 app.use(express.json());
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range');
-  if (req.method === 'OPTIONS') {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Range"
+  );
+  if (req.method === "OPTIONS") {
     res.sendStatus(200);
   } else {
     next();
@@ -28,20 +31,21 @@ function generateSessionData() {
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   ];
-  
+
   return {
-    sessionId: crypto.randomBytes(16).toString('hex'),
-    clientId: crypto.randomBytes(8).toString('hex'),
+    sessionId: crypto.randomBytes(16).toString("hex"),
+    clientId: crypto.randomBytes(8).toString("hex"),
     timestamp: Date.now(),
-    userAgent: userAgents[Math.floor(Math.random() * userAgents.length)]
+    userAgent: userAgents[Math.floor(Math.random() * userAgents.length)],
   };
 }
 
 // Function to extract video ID from YouTube URL
 function extractVideoId(url) {
-  const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+  const regex =
+    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
   const match = url.match(regex);
   return match ? match[1] : null;
 }
@@ -51,60 +55,61 @@ async function makeAdvancedRequest(url, options = {}, session = null) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
     const client = urlObj.protocol === "https:" ? https : http;
-    
+
     if (!session) session = generateSessionData();
 
     const requestOptions = {
       ...options,
       headers: {
         "User-Agent": session.userAgent,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "DNT": "1",
-        "Connection": "keep-alive",
+        Pragma: "no-cache",
+        DNT: "1",
+        Connection: "keep-alive",
         "Upgrade-Insecure-Requests": "1",
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Site": "none",
         "Sec-Fetch-User": "?1",
-        "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+        "sec-ch-ua":
+          '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
-        "X-Client-Data": Buffer.from(session.clientId).toString('base64'),
+        "X-Client-Data": Buffer.from(session.clientId).toString("base64"),
         ...options.headers,
       },
     };
 
     const req = client.request(url, requestOptions, (res) => {
       const chunks = [];
-      
+
       res.on("data", (chunk) => chunks.push(chunk));
-      
+
       res.on("end", () => {
         try {
           let data = Buffer.concat(chunks);
-          
-          const encoding = res.headers['content-encoding'];
-          if (encoding === 'gzip') {
+
+          const encoding = res.headers["content-encoding"];
+          if (encoding === "gzip") {
             data = zlib.gunzipSync(data);
-          } else if (encoding === 'deflate') {
+          } else if (encoding === "deflate") {
             data = zlib.inflateSync(data);
-          } else if (encoding === 'br') {
+          } else if (encoding === "br") {
             data = zlib.brotliDecompressSync(data);
           }
-          
-          const responseText = data.toString('utf8');
-          
-          resolve({ 
-            data: responseText, 
-            statusCode: res.statusCode, 
+
+          const responseText = data.toString("utf8");
+
+          resolve({
+            data: responseText,
+            statusCode: res.statusCode,
             headers: res.headers,
-            session: session
+            session: session,
           });
-          
         } catch (decompressError) {
           reject(decompressError);
         }
@@ -114,7 +119,7 @@ async function makeAdvancedRequest(url, options = {}, session = null) {
     req.on("error", reject);
     req.setTimeout(30000, () => {
       req.destroy();
-      reject(new Error('Request timeout'));
+      reject(new Error("Request timeout"));
     });
 
     if (options.body) {
@@ -129,15 +134,16 @@ function streamAudioWithSession(url, req, res, sessionId = null) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
     const client = urlObj.protocol === "https:" ? https : http;
-    
+
     // Create a complete session object with all required fields
     let session;
-    if (sessionId && typeof sessionId === 'string') {
+    if (sessionId && typeof sessionId === "string") {
       session = {
         sessionId: sessionId,
-        clientId: crypto.randomBytes(8).toString('hex'),
+        clientId: crypto.randomBytes(8).toString("hex"),
         timestamp: Date.now(),
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       };
     } else {
       session = generateSessionData();
@@ -145,30 +151,35 @@ function streamAudioWithSession(url, req, res, sessionId = null) {
 
     // Ensure userAgent is always defined
     if (!session.userAgent) {
-      session.userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+      session.userAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
     }
 
     const options = {
       headers: {
         "User-Agent": session.userAgent,
-        "Accept": "*/*",
+        Accept: "*/*",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "identity",
-        "Referer": "https://www.youtube.com/",
-        "Origin": "https://www.youtube.com",
+        Referer: "https://www.youtube.com/",
+        Origin: "https://www.youtube.com",
         "Sec-Fetch-Dest": "audio",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "cross-site",
-        "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+        "sec-ch-ua":
+          '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
-        "X-Client-Data": Buffer.from(session.clientId).toString('base64'),
+        "X-Client-Data": Buffer.from(session.clientId).toString("base64"),
         "X-Request-Time": session.timestamp.toString(),
         ...(req.headers.range && { Range: req.headers.range }),
       },
     };
 
-    console.log("🎵 Streaming with session:", session.sessionId.substring(0, 8));
+    console.log(
+      "🎵 Streaming with session:",
+      session.sessionId.substring(0, 8)
+    );
     console.log("👤 User-Agent:", session.userAgent.substring(0, 50) + "...");
 
     const audioReq = client.request(url, options, (audioRes) => {
@@ -191,7 +202,8 @@ function streamAudioWithSession(url, req, res, sessionId = null) {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
         "Access-Control-Allow-Headers": "Range",
-        "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
+        "Access-Control-Expose-Headers":
+          "Content-Length, Content-Range, Accept-Ranges",
       };
 
       if (audioRes.headers["content-length"]) {
@@ -228,7 +240,7 @@ function streamAudioWithSession(url, req, res, sessionId = null) {
     audioReq.setTimeout(60000, () => {
       console.error("⏰ Request timeout");
       audioReq.destroy();
-      reject(new Error('Stream timeout'));
+      reject(new Error("Stream timeout"));
     });
 
     audioReq.end();
@@ -238,9 +250,9 @@ function streamAudioWithSession(url, req, res, sessionId = null) {
 // Alternative approach using different YouTube API endpoints
 async function getVideoInfoFromNewAPI(videoId) {
   console.log("🔧 Trying alternative API approach...");
-  
+
   const session = generateSessionData();
-  
+
   // Method 1: Try the iOS client (often less restricted)
   console.log("📱 Trying iOS client...");
   const iOSPayload = {
@@ -250,27 +262,28 @@ async function getVideoInfoFromNewAPI(videoId) {
         clientVersion: "19.29.1",
         deviceMake: "Apple",
         deviceModel: "iPhone16,2",
-        userAgent: "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)",
+        userAgent:
+          "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)",
         osName: "iPhone",
-        osVersion: "17.5.1.21F90"
-      }
+        osVersion: "17.5.1.21F90",
+      },
     },
     videoId: videoId,
     racyCheckOk: true,
-    contentCheckOk: true
+    contentCheckOk: true,
   };
 
   try {
     const response = await makeAdvancedRequest(
       "https://www.youtube.com/youtubei/v1/player?key=AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc",
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'X-YouTube-Client-Name': '5',
-          'X-YouTube-Client-Version': '19.29.1',
+          "Content-Type": "application/json",
+          "X-YouTube-Client-Name": "5",
+          "X-YouTube-Client-Version": "19.29.1",
         },
-        body: JSON.stringify(iOSPayload)
+        body: JSON.stringify(iOSPayload),
       },
       session
     );
@@ -294,23 +307,24 @@ async function getVideoInfoFromNewAPI(videoId) {
         clientName: "ANDROID",
         clientVersion: "19.09.37",
         androidSdkVersion: 34,
-        userAgent: "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip"
-      }
+        userAgent:
+          "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
+      },
     },
-    videoId: videoId
+    videoId: videoId,
   };
 
   try {
     const response = await makeAdvancedRequest(
       "https://www.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'X-YouTube-Client-Name': '3',
-          'X-YouTube-Client-Version': '19.09.37',
+          "Content-Type": "application/json",
+          "X-YouTube-Client-Name": "3",
+          "X-YouTube-Client-Version": "19.09.37",
         },
-        body: JSON.stringify(androidPayload)
+        body: JSON.stringify(androidPayload),
       },
       session
     );
@@ -333,26 +347,26 @@ async function getVideoInfoFromNewAPI(videoId) {
       client: {
         clientName: "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
         clientVersion: "2.0",
-        clientScreen: "EMBED"
+        clientScreen: "EMBED",
       },
       thirdParty: {
-        embedUrl: "https://www.youtube.com/"
-      }
+        embedUrl: "https://www.youtube.com/",
+      },
     },
-    videoId: videoId
+    videoId: videoId,
   };
 
   try {
     const response = await makeAdvancedRequest(
       "https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'X-YouTube-Client-Name': '85',
-          'X-YouTube-Client-Version': '2.0',
+          "Content-Type": "application/json",
+          "X-YouTube-Client-Name": "85",
+          "X-YouTube-Client-Version": "2.0",
         },
-        body: JSON.stringify(tvPayload)
+        body: JSON.stringify(tvPayload),
       },
       session
     );
@@ -387,17 +401,19 @@ async function getVideoInfo(videoId) {
     console.log(`❌ Extraction failed: ${error.message}`);
   }
 
-  throw new Error("All extraction methods failed - YouTube may be blocking requests");
+  throw new Error(
+    "All extraction methods failed - YouTube may be blocking requests"
+  );
 }
 
 // Enhanced signature cipher decoding
 function decodeSignatureCipher(cipherString) {
   try {
     console.log("🔐 Decoding signature cipher...");
-    
+
     const params = {};
     const pairs = cipherString.split("&");
-    
+
     for (let pair of pairs) {
       const [key, value] = pair.split("=");
       if (key && value) {
@@ -458,17 +474,23 @@ function extractAudioStreams(playerResponse) {
 
   // Process adaptive formats (audio-only)
   if (streamingData.adaptiveFormats) {
-    console.log(`🔍 Processing ${streamingData.adaptiveFormats.length} adaptive formats`);
+    console.log(
+      `🔍 Processing ${streamingData.adaptiveFormats.length} adaptive formats`
+    );
 
     for (let format of streamingData.adaptiveFormats) {
       if (format.mimeType && format.mimeType.includes("audio")) {
-        console.log(`🎵 Found: ${format.mimeType}, itag: ${format.itag}, quality: ${format.audioQuality}`);
+        console.log(
+          `🎵 Found: ${format.mimeType}, itag: ${format.itag}, quality: ${format.audioQuality}`
+        );
 
         let audioUrl = format.url;
 
         if (!audioUrl && (format.signatureCipher || format.cipher)) {
           console.log("🔐 Decoding encrypted stream...");
-          audioUrl = decodeSignatureCipher(format.signatureCipher || format.cipher);
+          audioUrl = decodeSignatureCipher(
+            format.signatureCipher || format.cipher
+          );
         }
 
         if (audioUrl) {
@@ -483,7 +505,11 @@ function extractAudioStreams(playerResponse) {
             itag: format.itag,
             type: "audio-only",
           });
-          console.log(`✅ Added: ${format.mimeType}, ${format.bitrate || format.averageBitrate}bps`);
+          console.log(
+            `✅ Added: ${format.mimeType}, ${
+              format.bitrate || format.averageBitrate
+            }bps`
+          );
         }
       }
     }
@@ -498,7 +524,9 @@ function extractAudioStreams(playerResponse) {
         let audioUrl = format.url;
 
         if (!audioUrl && (format.signatureCipher || format.cipher)) {
-          audioUrl = decodeSignatureCipher(format.signatureCipher || format.cipher);
+          audioUrl = decodeSignatureCipher(
+            format.signatureCipher || format.cipher
+          );
         }
 
         if (audioUrl) {
@@ -527,20 +555,26 @@ function getBestAudioStream(streams) {
   console.log(`🎯 Selecting best stream from ${streams.length} options`);
 
   // Prefer audio-only streams
-  const audioOnlyStreams = streams.filter(s => s.type === "audio-only");
-  
+  const audioOnlyStreams = streams.filter((s) => s.type === "audio-only");
+
   if (audioOnlyStreams.length > 0) {
     audioOnlyStreams.sort((a, b) => {
-      const qualityOrder = { 'AUDIO_QUALITY_HIGH': 3, 'AUDIO_QUALITY_MEDIUM': 2, 'AUDIO_QUALITY_LOW': 1 };
+      const qualityOrder = {
+        AUDIO_QUALITY_HIGH: 3,
+        AUDIO_QUALITY_MEDIUM: 2,
+        AUDIO_QUALITY_LOW: 1,
+      };
       const aQuality = qualityOrder[a.audioQuality] || 0;
       const bQuality = qualityOrder[b.audioQuality] || 0;
-      
+
       if (aQuality !== bQuality) return bQuality - aQuality;
       return (b.bitrate || 0) - (a.bitrate || 0);
     });
 
     const selected = audioOnlyStreams[0];
-    console.log(`✅ Selected: ${selected.mimeType}, ${selected.audioQuality}, ${selected.bitrate}bps`);
+    console.log(
+      `✅ Selected: ${selected.mimeType}, ${selected.audioQuality}, ${selected.bitrate}bps`
+    );
     return selected;
   }
 
@@ -599,9 +633,15 @@ app.get("/get-audio-url", async (req, res) => {
     }
 
     const session = generateSessionData();
-    const proxyUrl = `/proxy-audio?url=${encodeURIComponent(bestStream.url)}&session=${session.sessionId}`;
+    const proxyUrl = `/proxy-audio?url=${encodeURIComponent(
+      bestStream.url
+    )}&session=${session.sessionId}`;
     const fullProxyUrl = `http://localhost:${PORT}${proxyUrl}`;
-    const playerUrl = `http://localhost:${PORT}/player?url=${encodeURIComponent(bestStream.url)}&title=${encodeURIComponent(title)}&author=${encodeURIComponent(author)}&session=${session.sessionId}`;
+    const playerUrl = `http://localhost:${PORT}/player?url=${encodeURIComponent(
+      bestStream.url
+    )}&title=${encodeURIComponent(title)}&author=${encodeURIComponent(
+      author
+    )}&session=${session.sessionId}`;
 
     console.log(`🎵 Ready! Session: ${session.sessionId.substring(0, 8)}`);
 
@@ -628,9 +668,9 @@ app.get("/get-audio-url", async (req, res) => {
       },
       session: {
         id: session.sessionId.substring(0, 8),
-        timestamp: session.timestamp
+        timestamp: session.timestamp,
       },
-      allStreams: audioStreams.map(stream => ({
+      allStreams: audioStreams.map((stream) => ({
         mimeType: stream.mimeType,
         bitrate: stream.bitrate,
         audioQuality: stream.audioQuality,
@@ -638,13 +678,13 @@ app.get("/get-audio-url", async (req, res) => {
         type: stream.type,
       })),
     });
-
   } catch (error) {
     console.error("❌ Error:", error.message);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message,
       timestamp: new Date().toISOString(),
-      suggestion: "YouTube may be blocking requests. Try again in a few minutes or use a different video."
+      suggestion:
+        "YouTube may be blocking requests. Try again in a few minutes or use a different video.",
     });
   }
 });
@@ -658,25 +698,27 @@ app.get("/proxy-audio", async (req, res) => {
       return res.status(400).json({ error: "Audio URL is required" });
     }
 
-    console.log(`🎵 Proxy request for session: ${sessionId?.substring(0, 8) || 'new'}`);
+    console.log(
+      `🎵 Proxy request for session: ${sessionId?.substring(0, 8) || "new"}`
+    );
 
     await streamAudioWithSession(url, req, res, sessionId);
-
   } catch (error) {
     console.error("❌ Stream error:", error.message);
-    
+
     if (!res.headersSent) {
-      if (error.message.includes('blocked') || error.message.includes('403')) {
-        res.status(403).json({ 
+      if (error.message.includes("blocked") || error.message.includes("403")) {
+        res.status(403).json({
           error: "Stream blocked by YouTube",
-          message: "The audio stream was blocked. Please get a fresh URL by calling /get-audio-url again.",
+          message:
+            "The audio stream was blocked. Please get a fresh URL by calling /get-audio-url again.",
           code: "STREAM_BLOCKED",
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         });
       } else {
-        res.status(500).json({ 
+        res.status(500).json({
           error: "Stream failed: " + error.message,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         });
       }
     }
@@ -686,7 +728,12 @@ app.get("/proxy-audio", async (req, res) => {
 // Download endpoint
 app.get("/download-audio", async (req, res) => {
   try {
-    const { url, title = "audio", format = "webm", session: sessionId } = req.query;
+    const {
+      url,
+      title = "audio",
+      format = "webm",
+      session: sessionId,
+    } = req.query;
 
     if (!url) {
       return res.status(400).json({ error: "Audio URL is required" });
@@ -703,7 +750,6 @@ app.get("/download-audio", async (req, res) => {
     });
 
     await streamAudioWithSession(url, req, res, sessionId);
-
   } catch (error) {
     console.error("❌ Download error:", error.message);
     if (!res.headersSent) {
@@ -714,7 +760,12 @@ app.get("/download-audio", async (req, res) => {
 
 // Enhanced player endpoint
 app.get("/player", async (req, res) => {
-  const { url, title = "YouTube Audio", author = "Unknown", session } = req.query;
+  const {
+    url,
+    title = "YouTube Audio",
+    author = "Unknown",
+    session,
+  } = req.query;
 
   if (!url) {
     return res.status(400).send(`
@@ -727,7 +778,9 @@ app.get("/player", async (req, res) => {
     `);
   }
 
-  const proxyUrl = `/proxy-audio?url=${encodeURIComponent(url)}&session=${session || ''}`;
+  const proxyUrl = `/proxy-audio?url=${encodeURIComponent(url)}&session=${
+    session || ""
+  }`;
 
   const html = `
     <!DOCTYPE html>
@@ -836,7 +889,9 @@ app.get("/player", async (req, res) => {
         <div class="player-container">
             <div class="player-header">
                 <h1>🎵 YouTube Audio</h1>
-                <p>${title.substring(0, 50)}${title.length > 50 ? '...' : ''}</p>
+                <p>${title.substring(0, 50)}${
+    title.length > 50 ? "..." : ""
+  }</p>
                 <small>by ${author}</small>
             </div>
             
@@ -849,7 +904,9 @@ app.get("/player", async (req, res) => {
             <div class="controls">
                 <button class="btn" onclick="testConnection()">🔍 Test Stream</button>
                 <button class="btn" onclick="forceReload()">🔄 Reload</button>
-                <a href="/download-audio?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&session=${session || ''}" 
+                <a href="/download-audio?url=${encodeURIComponent(
+                  url
+                )}&title=${encodeURIComponent(title)}&session=${session || ""}" 
                    class="btn" download>📥 Download</a>
             </div>
             
@@ -859,7 +916,9 @@ app.get("/player", async (req, res) => {
             
             <div class="debug-info">
                 <strong>🔧 Debug Information:</strong><br>
-                <strong>Session:</strong> ${session ? session.substring(0, 8) : 'new'}<br>
+                <strong>Session:</strong> ${
+                  session ? session.substring(0, 8) : "new"
+                }<br>
                 <strong>Stream URL:</strong> ${proxyUrl}<br>
                 <strong>Status:</strong> <span id="debugStatus">Initializing...</span><br>
                 <strong>Last Error:</strong> <span id="lastError">None</span><br>
@@ -978,19 +1037,23 @@ app.get("/player", async (req, res) => {
     </body>
     </html>
   `;
-  
+
   res.send(html);
 });
 
 // Health check
 app.get("/health", (req, res) => {
-  res.json({ 
-    status: "OK", 
+  res.json({
+    status: "OK",
     version: "Fixed User-Agent v2025.06.10",
     timestamp: new Date().toISOString(),
     user: "rohit-jsfreaky",
     methods: ["iOS API", "Android API", "TV API"],
-    fixes: ["User-Agent undefined fix", "Session management", "Enhanced debugging"]
+    fixes: [
+      "User-Agent undefined fix",
+      "Session management",
+      "Enhanced debugging",
+    ],
   });
 });
 
@@ -999,7 +1062,7 @@ app.use((error, req, res, next) => {
   console.error("❌ Server error:", error);
   res.status(500).json({
     error: "Server error",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
