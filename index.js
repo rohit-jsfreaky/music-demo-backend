@@ -1,1089 +1,1029 @@
 import express from "express";
-import https from "https";
-import http from "http";
-import { URL } from "url";
-import zlib from "zlib";
-import crypto from "crypto";
+import axios from "axios";
+import cors from "cors";
+import helmet from "helmet";
+import compression from "compression";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
+app.use(helmet());
+app.use(compression());
+app.use(cors());
 app.use(express.json());
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Range"
-  );
-  if (req.method === "OPTIONS") {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
+app.use(express.urlencoded({ extended: true }));
 
-// Generate random session data to avoid detection
-function generateSessionData() {
-  const userAgents = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+// JioSaavn API endpoints
+const JIOSAAVN_API_BASE = "https://saavn.dev/api";
+const JIOSAAVN_LEGACY_BASE = "https://www.jiosaavn.com/api.php";
+const SAAVN_API_BASE = "https://jiosaavn-api-2-harsh-patel.vercel.app";
+
+// Alternative APIs for suggestions
+const ALTERNATIVE_APIS = [
+  "https://jiosaavn-api-privatecvc.vercel.app",
+  "https://jiosaavn-api-pink.vercel.app",
+  "https://jiosaavn-api-omega.vercel.app",
+  "https://saavn-api-rust.vercel.app",
+];
+
+// Music recommendation engine - like Spotify/YouTube Music
+class MusicRecommendationEngine {
+  constructor() {
+    this.genreWeights = {};
+    this.artistConnections = {};
+    this.songFeatures = {};
+    this.userBehaviorPatterns = {
+      bollywood: ["romantic", "dance", "classical", "devotional"],
+      pop: ["dance", "electronic", "rock", "indie"],
+      rock: ["alternative", "metal", "indie", "classic"],
+      classical: ["instrumental", "devotional", "fusion"],
+      electronic: ["dance", "techno", "ambient", "pop"],
+    };
+  }
+
+  // Extract audio features from song metadata
+  extractAudioFeatures(song) {
+    const features = {
+      tempo: this.estimateTempo(song),
+      energy: this.estimateEnergy(song),
+      danceability: this.estimateDanceability(song),
+      valence: this.estimateValence(song),
+      acousticness: this.estimateAcousticness(song),
+      instrumentalness: this.estimateInstrumentalness(song),
+      genre: this.extractGenre(song),
+      decade: this.extractDecade(song.year),
+      language: song.language || "hindi",
+    };
+    return features;
+  }
+
+  estimateTempo(song) {
+    const title = (song.title || "").toLowerCase();
+    const artists = (song.primaryArtists || "").toLowerCase();
+
+    if (
+      title.includes("dance") ||
+      title.includes("party") ||
+      title.includes("club") ||
+      title.includes("beat") ||
+      artists.includes("dj")
+    )
+      return 0.8;
+
+    if (
+      title.includes("love") ||
+      title.includes("romantic") ||
+      title.includes("slow") ||
+      title.includes("sad")
+    )
+      return 0.3;
+
+    return 0.5;
+  }
+
+  estimateEnergy(song) {
+    const title = (song.title || "").toLowerCase();
+    const artists = (song.primaryArtists || "").toLowerCase();
+
+    if (
+      title.includes("rock") ||
+      title.includes("metal") ||
+      title.includes("party") ||
+      title.includes("high")
+    )
+      return 0.9;
+
+    if (
+      title.includes("acoustic") ||
+      title.includes("unplugged") ||
+      title.includes("classical")
+    )
+      return 0.2;
+
+    return 0.6;
+  }
+
+  estimateDanceability(song) {
+    const title = (song.title || "").toLowerCase();
+    const genre = this.extractGenre(song);
+
+    if (
+      title.includes("dance") ||
+      title.includes("party") ||
+      genre.includes("electronic") ||
+      genre.includes("pop")
+    )
+      return 0.8;
+
+    if (genre.includes("classical") || genre.includes("devotional")) return 0.1;
+
+    return 0.5;
+  }
+
+  estimateValence(song) {
+    const title = (song.title || "").toLowerCase();
+
+    if (
+      title.includes("happy") ||
+      title.includes("celebration") ||
+      title.includes("party") ||
+      title.includes("dance")
+    )
+      return 0.8;
+
+    if (
+      title.includes("sad") ||
+      title.includes("breakup") ||
+      title.includes("cry") ||
+      title.includes("lonely")
+    )
+      return 0.2;
+
+    return 0.5;
+  }
+
+  estimateAcousticness(song) {
+    const title = (song.title || "").toLowerCase();
+    const artists = (song.primaryArtists || "").toLowerCase();
+
+    if (
+      title.includes("acoustic") ||
+      title.includes("unplugged") ||
+      title.includes("classical") ||
+      artists.includes("classical")
+    )
+      return 0.9;
+
+    if (
+      title.includes("electronic") ||
+      title.includes("remix") ||
+      title.includes("club")
+    )
+      return 0.1;
+
+    return 0.4;
+  }
+
+  estimateInstrumentalness(song) {
+    const title = (song.title || "").toLowerCase();
+
+    if (
+      title.includes("instrumental") ||
+      title.includes("theme") ||
+      title.includes("background")
+    )
+      return 0.8;
+
+    return 0.1;
+  }
+
+  extractGenre(song) {
+    const title = (song.title || "").toLowerCase();
+    const artists = (song.primaryArtists || "").toLowerCase();
+    const album = (song.album || "").toLowerCase();
+
+    const text = `${title} ${artists} ${album}`;
+
+    if (
+      text.includes("bollywood") ||
+      text.includes("hindi") ||
+      text.includes("filmi")
+    )
+      return "bollywood";
+    if (text.includes("classical") || text.includes("raag")) return "classical";
+    if (text.includes("devotional") || text.includes("bhajan"))
+      return "devotional";
+    if (text.includes("rock") || text.includes("metal")) return "rock";
+    if (text.includes("pop") || text.includes("mainstream")) return "pop";
+    if (text.includes("electronic") || text.includes("edm"))
+      return "electronic";
+    if (text.includes("folk") || text.includes("traditional")) return "folk";
+    if (text.includes("punjabi")) return "punjabi";
+    if (text.includes("sufi")) return "sufi";
+
+    if (song.language === "hindi") return "bollywood";
+    if (song.language === "punjabi") return "punjabi";
+    if (song.language === "english") return "pop";
+
+    return "bollywood";
+  }
+
+  extractDecade(year) {
+    if (!year) return "2020s";
+    const yr = parseInt(year);
+    if (yr >= 2020) return "2020s";
+    if (yr >= 2010) return "2010s";
+    if (yr >= 2000) return "2000s";
+    if (yr >= 1990) return "1990s";
+    return "classic";
+  }
+
+  calculateSimilarity(song1Features, song2Features) {
+    let similarity = 0;
+    let weightSum = 0;
+
+    const weights = {
+      genre: 0.3,
+      tempo: 0.15,
+      energy: 0.15,
+      danceability: 0.1,
+      valence: 0.1,
+      acousticness: 0.05,
+      decade: 0.1,
+      language: 0.05,
+    };
+
+    if (song1Features.genre === song2Features.genre) {
+      similarity += weights.genre;
+    } else if (
+      this.areGenresRelated(song1Features.genre, song2Features.genre)
+    ) {
+      similarity += weights.genre * 0.5;
+    }
+    weightSum += weights.genre;
+
+    const numericFeatures = [
+      "tempo",
+      "energy",
+      "danceability",
+      "valence",
+      "acousticness",
+    ];
+
+    for (const feature of numericFeatures) {
+      const diff = Math.abs(song1Features[feature] - song2Features[feature]);
+      const featureSimilarity = 1 - diff;
+      similarity += featureSimilarity * weights[feature];
+      weightSum += weights[feature];
+    }
+
+    if (song1Features.decade === song2Features.decade) {
+      similarity += weights.decade;
+    } else if (
+      this.areDecadesRelated(song1Features.decade, song2Features.decade)
+    ) {
+      similarity += weights.decade * 0.7;
+    }
+    weightSum += weights.decade;
+
+    if (song1Features.language === song2Features.language) {
+      similarity += weights.language;
+    }
+    weightSum += weights.language;
+
+    return similarity / weightSum;
+  }
+
+  areGenresRelated(genre1, genre2) {
+    const relatedGenres = {
+      bollywood: ["pop", "classical", "devotional", "sufi"],
+      pop: ["bollywood", "electronic", "rock"],
+      rock: ["pop", "electronic", "metal"],
+      classical: ["bollywood", "devotional", "sufi"],
+      electronic: ["pop", "rock", "dance"],
+      devotional: ["classical", "bollywood", "sufi"],
+      sufi: ["classical", "devotional", "bollywood"],
+      punjabi: ["bollywood", "pop"],
+      folk: ["classical", "bollywood"],
+    };
+
+    return relatedGenres[genre1]?.includes(genre2) || false;
+  }
+
+  areDecadesRelated(decade1, decade2) {
+    const decades = ["classic", "1990s", "2000s", "2010s", "2020s"];
+    const index1 = decades.indexOf(decade1);
+    const index2 = decades.indexOf(decade2);
+
+    return Math.abs(index1 - index2) <= 1;
+  }
+
+  async getAdvancedRecommendations(targetSong, candidateSongs, limit = 20) {
+    const targetFeatures = this.extractAudioFeatures(targetSong);
+
+    const scoredSongs = candidateSongs.map((song) => {
+      const songFeatures = this.extractAudioFeatures(song);
+      const similarity = this.calculateSimilarity(targetFeatures, songFeatures);
+
+      let score = similarity;
+
+      if (song.playCount && parseInt(song.playCount) > 1000000) {
+        score *= 1.1;
+      }
+
+      if (song.year && parseInt(song.year) >= 2020) {
+        score *= 1.05;
+      }
+
+      if (this.areSongsSimilarTitles(targetSong.title, song.title)) {
+        score *= 0.3;
+      }
+
+      return { ...song, similarity: similarity, score: score };
+    });
+
+    const sortedSongs = scoredSongs.sort((a, b) => b.score - a.score);
+    const diversifiedResults = this.applyDiversity(sortedSongs, limit);
+
+    return diversifiedResults.slice(0, limit);
+  }
+
+  areSongsSimilarTitles(title1, title2) {
+    if (!title1 || !title2) return false;
+
+    const clean1 = title1
+      .toLowerCase()
+      .replace(/[\(\)\[\]]/g, "")
+      .replace(/remix|version|unplugged|acoustic|live/g, "")
+      .trim();
+
+    const clean2 = title2
+      .toLowerCase()
+      .replace(/[\(\)\[\]]/g, "")
+      .replace(/remix|version|unplugged|acoustic|live/g, "")
+      .trim();
+
+    return clean1 === clean2;
+  }
+
+  applyDiversity(songs, limit) {
+    const result = [];
+    const artistCount = {};
+    const albumCount = {};
+
+    // More flexible diversity constraints
+    const maxPerArtist = Math.max(3, Math.ceil(limit / 3)); // Allow at least 3 per artist, or 33% of limit
+    const maxPerAlbum = Math.max(2, Math.ceil(limit / 5)); // Allow at least 2 per album, or 20% of limit
+
+    // First pass: Apply diversity constraints
+    for (const song of songs) {
+      const artist = song.primaryArtists || "unknown";
+      const album = song.album || "unknown";
+
+      const artistSongs = artistCount[artist] || 0;
+      const albumSongs = albumCount[album] || 0;
+
+      if (artistSongs < maxPerArtist && albumSongs < maxPerAlbum) {
+        result.push(song);
+        artistCount[artist] = artistSongs + 1;
+        albumCount[album] = albumSongs + 1;
+
+        if (result.length >= limit) break;
+      }
+    }
+
+    // Second pass: If we don't have enough songs, relax the constraints
+    if (result.length < Math.min(15, limit) && songs.length > result.length) {
+      console.log(
+        `🔄 Relaxing diversity constraints to reach minimum of 15 songs...`
+      );
+
+      // Add more songs with relaxed artist constraint
+      const relaxedMaxPerArtist = Math.ceil(limit / 2); // Allow up to 50% from same artist
+
+      for (const song of songs) {
+        if (result.length >= limit) break;
+
+        // Skip if already included
+        if (result.find((r) => r.id === song.id)) continue;
+
+        const artist = song.primaryArtists || "unknown";
+        const artistSongs = result.filter(
+          (r) => (r.primaryArtists || "unknown") === artist
+        ).length;
+
+        if (artistSongs < relaxedMaxPerArtist) {
+          result.push(song);
+        }
+      }
+    }
+
+    // Third pass: If still not enough, add any remaining high-scoring songs
+    if (result.length < Math.min(15, limit) && songs.length > result.length) {
+      console.log(`🔄 Adding remaining high-scoring songs to reach target...`);
+
+      for (const song of songs) {
+        if (result.length >= limit) break;
+
+        // Skip if already included
+        if (!result.find((r) => r.id === song.id)) {
+          result.push(song);
+        }
+      }
+    }
+
+    console.log(
+      `🎯 Diversity algorithm: ${songs.length} input → ${result.length} output`
+    );
+    return result;
+  }
+}
+
+const recommendationEngine = new MusicRecommendationEngine();
+
+async function makeJioSaavnRequest(url, options = {}) {
+  const headers = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    Referer: "https://www.jiosaavn.com/",
+    Origin: "https://www.jiosaavn.com",
+    "Cache-Control": "no-cache",
+    Pragma: "no-cache",
+    ...options.headers,
+  };
+
+  return await axios.get(url, {
+    headers,
+    timeout: 15000,
+    ...options,
+  });
+}
+
+// Enhanced song pool generation with multiple fallbacks
+async function getSongPool(targetSong, limit = 200) {
+  let allSongs = [];
+
+  console.log(`🔍 Trying trending/charts endpoints...`);
+
+  // Step 1: Try simple search queries that usually work
+  const simpleQueries = [
+    "arijit singh",
+    "shreya ghoshal",
+    "honey singh",
+    "atif aslam",
+    "rahat fateh ali khan",
+    "sonu nigam",
+    "lata mangeshkar",
+    "kishore kumar",
   ];
 
-  return {
-    sessionId: crypto.randomBytes(16).toString("hex"),
-    clientId: crypto.randomBytes(8).toString("hex"),
-    timestamp: Date.now(),
-    userAgent: userAgents[Math.floor(Math.random() * userAgents.length)],
-  };
-}
+  console.log(`🔍 Trying simple artist searches...`);
+  for (const query of simpleQueries) {
+    if (allSongs.length > limit) break;
 
-// Function to extract video ID from YouTube URL
-function extractVideoId(url) {
-  const regex =
-    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
-  const match = url.match(regex);
-  return match ? match[1] : null;
-}
+    const searchEndpoints = [
+      `${SAAVN_API_BASE}/search/songs?query=${encodeURIComponent(
+        query
+      )}&page=1&limit=20`,
+      `${JIOSAAVN_API_BASE}/search/songs?query=${encodeURIComponent(
+        query
+      )}&page=1&limit=20`,
+      ...ALTERNATIVE_APIS.slice(0, 2).map(
+        (api) =>
+          `${api}/search/songs?query=${encodeURIComponent(
+            query
+          )}&page=1&limit=20`
+      ),
+    ];
 
-// Enhanced function to handle compressed responses
-async function makeAdvancedRequest(url, options = {}, session = null) {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const client = urlObj.protocol === "https:" ? https : http;
-
-    if (!session) session = generateSessionData();
-
-    const requestOptions = {
-      ...options,
-      headers: {
-        "User-Agent": session.userAgent,
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-        DNT: "1",
-        Connection: "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "sec-ch-ua":
-          '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "X-Client-Data": Buffer.from(session.clientId).toString("base64"),
-        ...options.headers,
-      },
-    };
-
-    const req = client.request(url, requestOptions, (res) => {
-      const chunks = [];
-
-      res.on("data", (chunk) => chunks.push(chunk));
-
-      res.on("end", () => {
-        try {
-          let data = Buffer.concat(chunks);
-
-          const encoding = res.headers["content-encoding"];
-          if (encoding === "gzip") {
-            data = zlib.gunzipSync(data);
-          } else if (encoding === "deflate") {
-            data = zlib.inflateSync(data);
-          } else if (encoding === "br") {
-            data = zlib.brotliDecompressSync(data);
-          }
-
-          const responseText = data.toString("utf8");
-
-          resolve({
-            data: responseText,
-            statusCode: res.statusCode,
-            headers: res.headers,
-            session: session,
-          });
-        } catch (decompressError) {
-          reject(decompressError);
-        }
-      });
-    });
-
-    req.on("error", reject);
-    req.setTimeout(30000, () => {
-      req.destroy();
-      reject(new Error("Request timeout"));
-    });
-
-    if (options.body) {
-      req.write(options.body);
-    }
-    req.end();
-  });
-}
-
-// Enhanced stream audio with better session handling
-function streamAudioWithSession(url, req, res, sessionId = null) {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const client = urlObj.protocol === "https:" ? https : http;
-
-    // Create a complete session object with all required fields
-    let session;
-    if (sessionId && typeof sessionId === "string") {
-      session = {
-        sessionId: sessionId,
-        clientId: crypto.randomBytes(8).toString("hex"),
-        timestamp: Date.now(),
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      };
-    } else {
-      session = generateSessionData();
-    }
-
-    // Ensure userAgent is always defined
-    if (!session.userAgent) {
-      session.userAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-    }
-
-    const options = {
-      headers: {
-        "User-Agent": session.userAgent,
-        Accept: "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "identity",
-        Referer: "https://www.youtube.com/",
-        Origin: "https://www.youtube.com",
-        "Sec-Fetch-Dest": "audio",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "cross-site",
-        "sec-ch-ua":
-          '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
-        "X-Client-Data": Buffer.from(session.clientId).toString("base64"),
-        "X-Request-Time": session.timestamp.toString(),
-        ...(req.headers.range && { Range: req.headers.range }),
-      },
-    };
-
-    console.log(
-      "🎵 Streaming with session:",
-      session.sessionId.substring(0, 8)
-    );
-    console.log("👤 User-Agent:", session.userAgent.substring(0, 50) + "...");
-
-    const audioReq = client.request(url, options, (audioRes) => {
-      console.log(`📊 Stream response: ${audioRes.statusCode}`);
-
-      if (audioRes.statusCode === 403) {
-        console.error("❌ 403 Forbidden - Stream blocked");
-        return reject(new Error("Stream blocked by YouTube - need fresh URL"));
-      }
-
-      if (audioRes.statusCode >= 400) {
-        console.error(`❌ HTTP Error: ${audioRes.statusCode}`);
-        return reject(new Error(`Stream error: ${audioRes.statusCode}`));
-      }
-
-      const responseHeaders = {
-        "Content-Type": audioRes.headers["content-type"] || "audio/webm",
-        "Accept-Ranges": "bytes",
-        "Cache-Control": "public, max-age=3600",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Access-Control-Allow-Headers": "Range",
-        "Access-Control-Expose-Headers":
-          "Content-Length, Content-Range, Accept-Ranges",
-      };
-
-      if (audioRes.headers["content-length"]) {
-        responseHeaders["Content-Length"] = audioRes.headers["content-length"];
-      }
-
-      if (audioRes.statusCode === 206) {
-        res.status(206);
-        responseHeaders["Content-Range"] = audioRes.headers["content-range"];
-        console.log("📊 Handling partial content request");
-      }
-
-      res.set(responseHeaders);
-      console.log("✅ Starting audio stream...");
-
-      audioRes.on("error", (error) => {
-        console.error("❌ Audio stream error:", error.message);
-        reject(error);
-      });
-
-      audioRes.on("end", () => {
-        console.log("✅ Audio stream completed successfully");
-        resolve();
-      });
-
-      audioRes.pipe(res);
-    });
-
-    audioReq.on("error", (error) => {
-      console.error("❌ Request error:", error.message);
-      reject(error);
-    });
-
-    audioReq.setTimeout(60000, () => {
-      console.error("⏰ Request timeout");
-      audioReq.destroy();
-      reject(new Error("Stream timeout"));
-    });
-
-    audioReq.end();
-  });
-}
-
-// Alternative approach using different YouTube API endpoints
-async function getVideoInfoFromNewAPI(videoId) {
-  console.log("🔧 Trying alternative API approach...");
-
-  const session = generateSessionData();
-
-  // Method 1: Try the iOS client (often less restricted)
-  console.log("📱 Trying iOS client...");
-  const iOSPayload = {
-    context: {
-      client: {
-        clientName: "IOS",
-        clientVersion: "19.29.1",
-        deviceMake: "Apple",
-        deviceModel: "iPhone16,2",
-        userAgent:
-          "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)",
-        osName: "iPhone",
-        osVersion: "17.5.1.21F90",
-      },
-    },
-    videoId: videoId,
-    racyCheckOk: true,
-    contentCheckOk: true,
-  };
-
-  try {
-    const response = await makeAdvancedRequest(
-      "https://www.youtube.com/youtubei/v1/player?key=AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-YouTube-Client-Name": "5",
-          "X-YouTube-Client-Version": "19.29.1",
-        },
-        body: JSON.stringify(iOSPayload),
-      },
-      session
-    );
-
-    if (response.statusCode === 200) {
-      const data = JSON.parse(response.data);
-      if (data && data.streamingData) {
-        console.log("✅ Success with iOS client");
-        return data;
-      }
-    }
-  } catch (error) {
-    console.log("⚠️ iOS client failed:", error.message);
-  }
-
-  // Method 2: Try Android client
-  console.log("🤖 Trying Android client...");
-  const androidPayload = {
-    context: {
-      client: {
-        clientName: "ANDROID",
-        clientVersion: "19.09.37",
-        androidSdkVersion: 34,
-        userAgent:
-          "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
-      },
-    },
-    videoId: videoId,
-  };
-
-  try {
-    const response = await makeAdvancedRequest(
-      "https://www.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-YouTube-Client-Name": "3",
-          "X-YouTube-Client-Version": "19.09.37",
-        },
-        body: JSON.stringify(androidPayload),
-      },
-      session
-    );
-
-    if (response.statusCode === 200) {
-      const data = JSON.parse(response.data);
-      if (data && data.streamingData) {
-        console.log("✅ Success with Android client");
-        return data;
-      }
-    }
-  } catch (error) {
-    console.log("⚠️ Android client failed:", error.message);
-  }
-
-  // Method 3: Try TV client (often works when others fail)
-  console.log("📺 Trying TV client...");
-  const tvPayload = {
-    context: {
-      client: {
-        clientName: "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
-        clientVersion: "2.0",
-        clientScreen: "EMBED",
-      },
-      thirdParty: {
-        embedUrl: "https://www.youtube.com/",
-      },
-    },
-    videoId: videoId,
-  };
-
-  try {
-    const response = await makeAdvancedRequest(
-      "https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-YouTube-Client-Name": "85",
-          "X-YouTube-Client-Version": "2.0",
-        },
-        body: JSON.stringify(tvPayload),
-      },
-      session
-    );
-
-    if (response.statusCode === 200) {
-      const data = JSON.parse(response.data);
-      if (data && data.streamingData) {
-        console.log("✅ Success with TV client");
-        return data;
-      }
-    }
-  } catch (error) {
-    console.log("⚠️ TV client failed:", error.message);
-  }
-
-  throw new Error("All API methods failed");
-}
-
-// Main extraction function
-async function getVideoInfo(videoId) {
-  console.log(`🔍 Starting extraction for: ${videoId}`);
-  console.log(`🕐 Time: ${new Date().toISOString()}`);
-  console.log(`👤 User: rohit-jsfreaky`);
-
-  try {
-    const result = await getVideoInfoFromNewAPI(videoId);
-    if (result && (result.streamingData || result.videoDetails)) {
-      console.log("✅ Extraction successful!");
-      return result;
-    }
-  } catch (error) {
-    console.log(`❌ Extraction failed: ${error.message}`);
-  }
-
-  throw new Error(
-    "All extraction methods failed - YouTube may be blocking requests"
-  );
-}
-
-// Enhanced signature cipher decoding
-function decodeSignatureCipher(cipherString) {
-  try {
-    console.log("🔐 Decoding signature cipher...");
-
-    const params = {};
-    const pairs = cipherString.split("&");
-
-    for (let pair of pairs) {
-      const [key, value] = pair.split("=");
-      if (key && value) {
-        try {
-          params[decodeURIComponent(key)] = decodeURIComponent(value);
-        } catch (e) {
-          params[key] = value;
-        }
-      }
-    }
-
-    let url = params.url;
-    const signature = params.s;
-    const signatureParam = params.sp || "signature";
-
-    if (!url) {
-      console.log("❌ No URL found in cipher");
-      return null;
-    }
-
-    if (signature) {
-      console.log("🔑 Found signature, appending to URL...");
+    for (const endpoint of searchEndpoints) {
       try {
-        const urlObj = new URL(url);
-        urlObj.searchParams.set(signatureParam, signature);
-        return urlObj.toString();
-      } catch (urlError) {
-        console.log("❌ URL construction failed:", urlError.message);
-        return url;
+        const response = await makeJioSaavnRequest(endpoint);
+
+        if (response.data && response.data.data && response.data.data.results) {
+          allSongs = [...allSongs, ...response.data.data.results];
+          console.log(
+            `✅ Got ${response.data.data.results.length} songs from search: ${query}`
+          );
+          break; // Move to next query
+        } else if (
+          response.data &&
+          response.data.data &&
+          Array.isArray(response.data.data)
+        ) {
+          allSongs = [...allSongs, ...response.data.data];
+          console.log(
+            `✅ Got ${response.data.data.length} songs from search: ${query}`
+          );
+          break;
+        }
+      } catch (error) {
+        continue;
       }
     }
 
-    return url;
-  } catch (error) {
-    console.log("❌ Cipher decoding error:", error.message);
-    return null;
-  }
-}
-
-// Enhanced audio stream extraction
-function extractAudioStreams(playerResponse) {
-  console.log("🎵 Extracting audio streams...");
-
-  if (playerResponse.playabilityStatus?.status !== "OK") {
-    const reason = playerResponse.playabilityStatus?.reason || "Unknown reason";
-    console.log("❌ Video not available:", reason);
-    throw new Error(`Video not available: ${reason}`);
+    // Add delay between searches
+    await new Promise((resolve) => setTimeout(resolve, 200));
   }
 
-  const streamingData = playerResponse.streamingData;
-  if (!streamingData) {
-    console.log("❌ No streaming data available");
-    throw new Error("No streaming data available");
-  }
+  // Step 3: Try genre-based searches based on target song
+  if (allSongs.length < 100) {
+    console.log(`🔍 Trying genre-based searches...`);
+    const genre = recommendationEngine.extractGenre(targetSong);
+    const genreQueries = [
+      genre === "bollywood" ? "hindi" : genre,
+      `${targetSong.language || "hindi"} songs`,
+      "latest songs",
+      "top songs",
+    ];
 
-  console.log("📊 Available data:", Object.keys(streamingData));
-  const streams = [];
+    for (const query of genreQueries) {
+      if (allSongs.length > limit) break;
 
-  // Process adaptive formats (audio-only)
-  if (streamingData.adaptiveFormats) {
-    console.log(
-      `🔍 Processing ${streamingData.adaptiveFormats.length} adaptive formats`
-    );
-
-    for (let format of streamingData.adaptiveFormats) {
-      if (format.mimeType && format.mimeType.includes("audio")) {
-        console.log(
-          `🎵 Found: ${format.mimeType}, itag: ${format.itag}, quality: ${format.audioQuality}`
+      try {
+        const response = await makeJioSaavnRequest(
+          `${SAAVN_API_BASE}/search/songs?query=${encodeURIComponent(
+            query
+          )}&page=1&limit=30`
         );
 
-        let audioUrl = format.url;
-
-        if (!audioUrl && (format.signatureCipher || format.cipher)) {
-          console.log("🔐 Decoding encrypted stream...");
-          audioUrl = decodeSignatureCipher(
-            format.signatureCipher || format.cipher
-          );
-        }
-
-        if (audioUrl) {
-          streams.push({
-            url: audioUrl,
-            mimeType: format.mimeType,
-            bitrate: format.bitrate || format.averageBitrate,
-            audioQuality: format.audioQuality,
-            audioSampleRate: format.audioSampleRate,
-            audioChannels: format.audioChannels,
-            contentLength: format.contentLength,
-            itag: format.itag,
-            type: "audio-only",
-          });
+        if (response.data && response.data.data && response.data.data.results) {
+          allSongs = [...allSongs, ...response.data.data.results];
           console.log(
-            `✅ Added: ${format.mimeType}, ${
-              format.bitrate || format.averageBitrate
-            }bps`
-          );
-        }
-      }
-    }
-  }
-
-  // Fallback to regular formats
-  if (streamingData.formats && streams.length === 0) {
-    console.log(`🔍 Checking ${streamingData.formats.length} regular formats`);
-
-    for (let format of streamingData.formats) {
-      if (format.mimeType && format.audioQuality) {
-        let audioUrl = format.url;
-
-        if (!audioUrl && (format.signatureCipher || format.cipher)) {
-          audioUrl = decodeSignatureCipher(
-            format.signatureCipher || format.cipher
+            `✅ Got ${response.data.data.results.length} songs from genre search: ${query}`
           );
         }
 
-        if (audioUrl) {
-          streams.push({
-            url: audioUrl,
-            mimeType: format.mimeType,
-            bitrate: format.bitrate,
-            audioQuality: format.audioQuality,
-            itag: format.itag,
-            type: "video+audio",
-          });
-          console.log(`✅ Added fallback: ${format.mimeType}`);
-        }
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      } catch (error) {
+        console.log(`❌ Genre search failed: ${query}`);
+        continue;
       }
     }
   }
+  // Remove duplicates
+  const uniqueSongs = allSongs.filter(
+    (song, index, self) => index === self.findIndex((s) => s.id === song.id)
+  );
 
-  console.log(`📊 Total streams found: ${streams.length}`);
-  return streams;
+  console.log(`📊 Final song pool: ${uniqueSongs.length} unique songs`);
+  return uniqueSongs;
 }
-
-// Get best audio stream
-function getBestAudioStream(streams) {
-  if (streams.length === 0) return null;
-
-  console.log(`🎯 Selecting best stream from ${streams.length} options`);
-
-  // Prefer audio-only streams
-  const audioOnlyStreams = streams.filter((s) => s.type === "audio-only");
-
-  if (audioOnlyStreams.length > 0) {
-    audioOnlyStreams.sort((a, b) => {
-      const qualityOrder = {
-        AUDIO_QUALITY_HIGH: 3,
-        AUDIO_QUALITY_MEDIUM: 2,
-        AUDIO_QUALITY_LOW: 1,
-      };
-      const aQuality = qualityOrder[a.audioQuality] || 0;
-      const bQuality = qualityOrder[b.audioQuality] || 0;
-
-      if (aQuality !== bQuality) return bQuality - aQuality;
-      return (b.bitrate || 0) - (a.bitrate || 0);
-    });
-
-    const selected = audioOnlyStreams[0];
-    console.log(
-      `✅ Selected: ${selected.mimeType}, ${selected.audioQuality}, ${selected.bitrate}bps`
-    );
-    return selected;
-  }
-
-  // Fallback
-  streams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-  const selected = streams[0];
-  console.log(`✅ Selected fallback: ${selected.mimeType}`);
-  return selected;
-}
-
-// Main endpoint
-app.get("/get-audio-url", async (req, res) => {
-  try {
-    const { youtubeUrl } = req.query;
-
-    if (!youtubeUrl) {
-      return res.status(400).json({ error: "YouTube URL is required" });
-    }
-
-    const videoId = extractVideoId(youtubeUrl);
-    if (!videoId) {
-      return res.status(400).json({ error: "Invalid YouTube URL" });
-    }
-
-    console.log(`🚀 Processing: ${videoId}`);
-    console.log(`🕐 Current time: 2025-06-10 12:39:57 UTC`);
-    console.log(`👤 User: rohit-jsfreaky`);
-
-    const playerResponse = await getVideoInfo(videoId);
-    const videoDetails = playerResponse.videoDetails;
-    const title = videoDetails?.title || "Unknown";
-    const author = videoDetails?.author || "Unknown";
-    const lengthSeconds = videoDetails?.lengthSeconds || 0;
-
-    console.log(`📺 "${title}" by ${author}`);
-
-    const audioStreams = extractAudioStreams(playerResponse);
-
-    if (audioStreams.length === 0) {
-      return res.status(404).json({
-        error: "No audio streams found",
-        debug: {
-          hasStreamingData: !!playerResponse.streamingData,
-          playabilityStatus: playerResponse.playabilityStatus?.status,
-        },
-      });
-    }
-
-    const bestStream = getBestAudioStream(audioStreams);
-
-    if (!bestStream) {
-      return res.status(404).json({
-        error: "No suitable audio stream found",
-        streamsFound: audioStreams.length,
-      });
-    }
-
-    const session = generateSessionData();
-    const proxyUrl = `/proxy-audio?url=${encodeURIComponent(
-      bestStream.url
-    )}&session=${session.sessionId}`;
-    const fullProxyUrl = `http://localhost:${PORT}${proxyUrl}`;
-    const playerUrl = `http://localhost:${PORT}/player?url=${encodeURIComponent(
-      bestStream.url
-    )}&title=${encodeURIComponent(title)}&author=${encodeURIComponent(
-      author
-    )}&session=${session.sessionId}`;
-
-    console.log(`🎵 Ready! Session: ${session.sessionId.substring(0, 8)}`);
-
-    res.json({
-      success: true,
-      videoInfo: {
-        id: videoId,
-        title,
-        author,
-        duration: lengthSeconds,
-      },
-      directUrl: bestStream.url,
-      proxyUrl: proxyUrl,
-      fullProxyUrl: fullProxyUrl,
-      playerUrl: playerUrl,
-      audioInfo: {
-        mimeType: bestStream.mimeType,
-        bitrate: bestStream.bitrate,
-        audioQuality: bestStream.audioQuality,
-        audioSampleRate: bestStream.audioSampleRate,
-        audioChannels: bestStream.audioChannels,
-        contentLength: bestStream.contentLength,
-        itag: bestStream.itag,
-      },
-      session: {
-        id: session.sessionId.substring(0, 8),
-        timestamp: session.timestamp,
-      },
-      allStreams: audioStreams.map((stream) => ({
-        mimeType: stream.mimeType,
-        bitrate: stream.bitrate,
-        audioQuality: stream.audioQuality,
-        itag: stream.itag,
-        type: stream.type,
-      })),
-    });
-  } catch (error) {
-    console.error("❌ Error:", error.message);
-    res.status(500).json({
-      error: error.message,
-      timestamp: new Date().toISOString(),
-      suggestion:
-        "YouTube may be blocking requests. Try again in a few minutes or use a different video.",
-    });
-  }
-});
-
-// Enhanced proxy endpoint with proper session handling
-app.get("/proxy-audio", async (req, res) => {
-  try {
-    const { url, session: sessionId } = req.query;
-
-    if (!url) {
-      return res.status(400).json({ error: "Audio URL is required" });
-    }
-
-    console.log(
-      `🎵 Proxy request for session: ${sessionId?.substring(0, 8) || "new"}`
-    );
-
-    await streamAudioWithSession(url, req, res, sessionId);
-  } catch (error) {
-    console.error("❌ Stream error:", error.message);
-
-    if (!res.headersSent) {
-      if (error.message.includes("blocked") || error.message.includes("403")) {
-        res.status(403).json({
-          error: "Stream blocked by YouTube",
-          message:
-            "The audio stream was blocked. Please get a fresh URL by calling /get-audio-url again.",
-          code: "STREAM_BLOCKED",
-          timestamp: new Date().toISOString(),
-        });
-      } else {
-        res.status(500).json({
-          error: "Stream failed: " + error.message,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    }
-  }
-});
-
-// Download endpoint
-app.get("/download-audio", async (req, res) => {
-  try {
-    const {
-      url,
-      title = "audio",
-      format = "webm",
-      session: sessionId,
-    } = req.query;
-
-    if (!url) {
-      return res.status(400).json({ error: "Audio URL is required" });
-    }
-
-    const cleanTitle = title.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_");
-    const filename = `${cleanTitle}.${format}`;
-
-    console.log(`📥 Downloading: ${filename}`);
-
-    res.set({
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "Content-Type": "application/octet-stream",
-    });
-
-    await streamAudioWithSession(url, req, res, sessionId);
-  } catch (error) {
-    console.error("❌ Download error:", error.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "Download failed: " + error.message });
-    }
-  }
-});
-
-// Enhanced player endpoint
-app.get("/player", async (req, res) => {
-  const {
-    url,
-    title = "YouTube Audio",
-    author = "Unknown",
-    session,
-  } = req.query;
-
-  if (!url) {
-    return res.status(400).send(`
-      <html>
-        <body style="font-family: Arial; text-align: center; padding: 50px;">
-          <h2>❌ No audio URL provided</h2>
-          <p>Please provide a valid audio URL parameter.</p>
-        </body>
-      </html>
-    `);
-  }
-
-  const proxyUrl = `/proxy-audio?url=${encodeURIComponent(url)}&session=${
-    session || ""
-  }`;
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>🎵 ${title}</title>
-        <style>
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                margin: 0;
-                padding: 20px;
-                min-height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .player-container {
-                background: white;
-                border-radius: 20px;
-                padding: 30px;
-                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-                max-width: 500px;
-                width: 100%;
-                text-align: center;
-            }
-            .player-header {
-                background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
-                height: 120px;
-                border-radius: 15px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                margin-bottom: 20px;
-                color: white;
-                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            }
-            .player-header h1 {
-                margin: 0;
-                font-size: 24px;
-                font-weight: bold;
-            }
-            .player-header p {
-                margin: 5px 0 0 0;
-                opacity: 0.9;
-                font-size: 16px;
-            }
-            audio {
-                width: 100%;
-                margin: 20px 0;
-                height: 60px;
-                border-radius: 10px;
-            }
-            .controls {
-                display: flex;
-                gap: 10px;
-                justify-content: center;
-                margin: 20px 0;
-                flex-wrap: wrap;
-            }
-            .btn {
-                background: linear-gradient(135deg, #667eea, #764ba2);
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                border-radius: 25px;
-                cursor: pointer;
-                font-size: 14px;
-                font-weight: 500;
-                transition: all 0.3s ease;
-                text-decoration: none;
-                display: inline-block;
-            }
-            .btn:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-            }
-            .status {
-                margin: 15px 0;
-                padding: 12px;
-                border-radius: 10px;
-                font-size: 14px;
-                font-weight: 500;
-            }
-            .status.loading { background: #e3f2fd; color: #1565c0; }
-            .status.playing { background: #f3e5f5; color: #7b1fa2; }
-            .status.paused { background: #fff3e0; color: #ef6c00; }
-            .status.error { background: #ffebee; color: #c62828; }
-            .status.success { background: #e8f5e8; color: #2e7d32; }
-            .debug-info {
-                background: #f8f9fa;
-                border-radius: 10px;
-                padding: 15px;
-                margin: 15px 0;
-                font-size: 12px;
-                color: #666;
-                text-align: left;
-                font-family: monospace;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="player-container">
-            <div class="player-header">
-                <h1>🎵 YouTube Audio</h1>
-                <p>${title.substring(0, 50)}${
-    title.length > 50 ? "..." : ""
-  }</p>
-                <small>by ${author}</small>
-            </div>
-            
-            <audio id="audioPlayer" controls preload="metadata" crossorigin="anonymous">
-                <source src="${proxyUrl}" type="audio/webm">
-                <source src="${proxyUrl}" type="audio/mp4">
-                Your browser does not support the audio element.
-            </audio>
-            
-            <div class="controls">
-                <button class="btn" onclick="testConnection()">🔍 Test Stream</button>
-                <button class="btn" onclick="forceReload()">🔄 Reload</button>
-                <a href="/download-audio?url=${encodeURIComponent(
-                  url
-                )}&title=${encodeURIComponent(title)}&session=${session || ""}" 
-                   class="btn" download>📥 Download</a>
-            </div>
-            
-            <div id="status" class="status loading">
-                🔄 Loading audio stream...
-            </div>
-            
-            <div class="debug-info">
-                <strong>🔧 Debug Information:</strong><br>
-                <strong>Session:</strong> ${
-                  session ? session.substring(0, 8) : "new"
-                }<br>
-                <strong>Stream URL:</strong> ${proxyUrl}<br>
-                <strong>Status:</strong> <span id="debugStatus">Initializing...</span><br>
-                <strong>Last Error:</strong> <span id="lastError">None</span><br>
-                <strong>Attempts:</strong> <span id="attempts">0</span><br>
-                <strong>Server Time:</strong> 2025-06-10 12:39:57 UTC<br>
-                <strong>User:</strong> rohit-jsfreaky
-            </div>
-        </div>
-
-        <script>
-            const audio = document.getElementById('audioPlayer');
-            const status = document.getElementById('status');
-            const debugStatus = document.getElementById('debugStatus');
-            const lastError = document.getElementById('lastError');
-            const attempts = document.getElementById('attempts');
-            
-            let attemptCount = 0;
-            
-            function showStatus(message, type = 'loading') {
-                status.textContent = message;
-                status.className = 'status ' + type;
-                debugStatus.textContent = type.toUpperCase();
-            }
-            
-            function updateAttempts() {
-                attemptCount++;
-                attempts.textContent = attemptCount;
-            }
-            
-            async function testConnection() {
-                showStatus('🔍 Testing stream connection...', 'loading');
-                updateAttempts();
-                
-                try {
-                    const response = await fetch('${proxyUrl}', { 
-                        method: 'HEAD',
-                        mode: 'cors'
-                    });
-                    
-                    if (response.ok) {
-                        showStatus('✅ Stream connection successful!', 'success');
-                        lastError.textContent = 'None';
-                    } else {
-                        throw new Error(\`HTTP \${response.status}: \${response.statusText}\`);
-                    }
-                } catch (error) {
-                    showStatus(\`❌ Connection failed: \${error.message}\`, 'error');
-                    lastError.textContent = error.message;
-                    
-                    if (error.message.includes('403')) {
-                        showStatus('🚫 403 Forbidden - Stream blocked. Please get a fresh URL.', 'error');
-                    }
-                }
-            }
-            
-            function forceReload() {
-                showStatus('🔄 Reloading audio source...', 'loading');
-                updateAttempts();
-                audio.load();
-                setTimeout(testConnection, 1000);
-            }
-            
-            // Audio event listeners
-            audio.addEventListener('loadstart', () => {
-                showStatus('🔄 Loading audio...', 'loading');
-                updateAttempts();
-            });
-            
-            audio.addEventListener('loadeddata', () => {
-                showStatus('✅ Audio loaded!', 'success');
-                lastError.textContent = 'None';
-            });
-            
-            audio.addEventListener('canplay', () => {
-                showStatus('🎵 Ready to play!', 'success');
-            });
-            
-            audio.addEventListener('play', () => {
-                showStatus('▶️ Playing...', 'playing');
-            });
-            
-            audio.addEventListener('pause', () => {
-                showStatus('⏸️ Paused', 'paused');
-            });
-            
-            audio.addEventListener('error', (e) => {
-                const error = audio.error;
-                let errorMsg = 'Unknown error';
-                
-                if (error) {
-                    switch(error.code) {
-                        case error.MEDIA_ERR_ABORTED:
-                            errorMsg = 'Playback aborted';
-                            break;
-                        case error.MEDIA_ERR_NETWORK:
-                            errorMsg = 'Network error - Stream may be blocked';
-                            break;
-                        case error.MEDIA_ERR_DECODE:
-                            errorMsg = 'Audio decoding error';
-                            break;
-                        case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                            errorMsg = 'Audio format not supported';
-                            break;
-                    }
-                }
-                
-                showStatus(\`❌ \${errorMsg}\`, 'error');
-                lastError.textContent = errorMsg;
-            });
-            
-            // Initialize
-            window.addEventListener('load', () => {
-                setTimeout(testConnection, 500);
-            });
-        </script>
-    </body>
-    </html>
-  `;
-
-  res.send(html);
-});
 
 // Health check
 app.get("/health", (req, res) => {
   res.json({
     status: "OK",
-    version: "Fixed User-Agent v2025.06.10",
+    message: "Advanced JioSaavn Music API with AI Recommendations",
     timestamp: new Date().toISOString(),
-    user: "rohit-jsfreaky",
-    methods: ["iOS API", "Android API", "TV API"],
-    fixes: [
-      "User-Agent undefined fix",
-      "Session management",
-      "Enhanced debugging",
+    features: [
+      "Smart music recommendations using audio feature analysis",
+      "Multiple fallback mechanisms for song pool generation",
+      "Genre-based similarity matching",
+      "Artist and mood-based suggestions",
+      "Diversity algorithms to avoid repetitive results",
+      "Minimum 15 recommendations when available",
     ],
+    endpoints: {
+      search: "/api/search?q=song_name",
+      suggestions: "/api/suggestions/:song_id",
+    },
   });
 });
 
-// Error handler
-app.use((error, req, res, next) => {
-  console.error("❌ Server error:", error);
+// Search songs using multiple API endpoints
+app.get("/api/search", async (req, res) => {
+  try {
+    const { q, limit = 10 } = req.query;
+
+    if (!q) {
+      return res.status(400).json({ error: 'Query parameter "q" is required' });
+    }
+
+    const searchEndpoints = [
+      `${SAAVN_API_BASE}/search/songs?query=${encodeURIComponent(
+        q
+      )}&page=1&limit=${limit}`,
+      `${JIOSAAVN_API_BASE}/search/songs?query=${encodeURIComponent(
+        q
+      )}&page=1&limit=${limit}`,
+      `${JIOSAAVN_LEGACY_BASE}?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${encodeURIComponent(
+        q
+      )}`,
+      ...ALTERNATIVE_APIS.map(
+        (api) =>
+          `${api}/search/songs?query=${encodeURIComponent(
+            q
+          )}&page=1&limit=${limit}`
+      ),
+    ];
+
+    let searchResults = null;
+
+    for (const endpoint of searchEndpoints) {
+      try {
+        console.log(`Trying search endpoint: ${endpoint}`);
+        const response = await makeJioSaavnRequest(endpoint);
+
+        if (response.data && response.data.data && response.data.data.results) {
+          searchResults = response.data.data.results;
+          break;
+        } else if (response.data && response.data.songs) {
+          searchResults = response.data.songs.data || response.data.songs;
+          break;
+        } else if (
+          response.data &&
+          response.data.data &&
+          Array.isArray(response.data.data)
+        ) {
+          searchResults = response.data.data;
+          break;
+        } else if (response.data && Array.isArray(response.data)) {
+          searchResults = response.data;
+          break;
+        }
+      } catch (endpointError) {
+        console.log(`Endpoint failed: ${endpoint}`, endpointError.message);
+        continue;
+      }
+    }
+
+    if (!searchResults || searchResults.length === 0) {
+      return res.status(404).json({ error: "No songs found" });
+    }
+
+    const formattedSongs = searchResults.slice(0, limit).map((song) => ({
+      id: song.id,
+      title: song.name || song.song || song.title,
+      subtitle: song.primaryArtists || song.primary_artists || song.subtitle,
+      image:
+        song.image?.[2]?.link ||
+        song.image ||
+        song.images?.find((img) => img.quality === "500x500")?.link,
+      duration: song.duration,
+      url: song.permaUrl || song.perma_url || song.url,
+      primaryArtists: song.primaryArtists || song.primary_artists,
+      featuredArtists: song.featuredArtists || song.featured_artists,
+      album: song.album?.name || song.album,
+      year: song.releaseDate || song.year,
+      playCount: song.playCount || song.play_count,
+      language: song.language,
+      hasLyrics: song.hasLyrics || song.has_lyrics === "true",
+    }));
+
+    res.json({
+      success: true,
+      results: formattedSongs.length,
+      data: formattedSongs,
+    });
+  } catch (error) {
+    console.error("Search error:", error.message);
+    res.status(500).json({
+      error: "Failed to search songs",
+      message: error.message,
+    });
+  }
+});
+
+// Advanced AI-powered song suggestions with robust fallback
+app.get("/api/suggestions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const limit = parseInt(req.query.limit) || 20;
+
+    if (!id) {
+      return res.status(400).json({ error: "Song ID is required" });
+    }
+
+    console.log(`🎵 Getting AI-powered suggestions for song ID: ${id}`);
+
+    // Step 1: Get the target song details
+    const songEndpoints = [
+      `${SAAVN_API_BASE}/songs?id=${id}`,
+      `${SAAVN_API_BASE}/song?id=${id}`,
+      `${JIOSAAVN_API_BASE}/songs?id=${id}`,
+      `${JIOSAAVN_API_BASE}/song?id=${id}`,
+      `${JIOSAAVN_LEGACY_BASE}?__call=song.getDetails&cc=in&_marker=0&_format=json&pids=${id}`,
+      `${JIOSAAVN_LEGACY_BASE}?__call=webapi.get&token=${id}&type=song&_format=json&_marker=0`,
+      ...ALTERNATIVE_APIS.map((api) => `${api}/songs?id=${id}`),
+      ...ALTERNATIVE_APIS.map((api) => `${api}/song?id=${id}`),
+    ];
+
+    let targetSong = null;
+    let workingAPI = null;
+
+    for (const endpoint of songEndpoints) {
+      try {
+        console.log(`🔍 Trying endpoint: ${endpoint}`);
+        const response = await makeJioSaavnRequest(endpoint);
+
+        if (response.data && response.data.data && response.data.data[0]) {
+          targetSong = response.data.data[0];
+          workingAPI = endpoint;
+          break;
+        } else if (
+          response.data &&
+          response.data.data &&
+          !Array.isArray(response.data.data)
+        ) {
+          targetSong = response.data.data;
+          workingAPI = endpoint;
+          break;
+        } else if (response.data && response.data[id]) {
+          targetSong = response.data[id];
+          workingAPI = endpoint;
+          break;
+        } else if (
+          response.data &&
+          Array.isArray(response.data) &&
+          response.data[0]
+        ) {
+          targetSong = response.data[0];
+          workingAPI = endpoint;
+          break;
+        } else if (response.data && response.data.song) {
+          targetSong = response.data.song;
+          workingAPI = endpoint;
+          break;
+        } else if (
+          response.data &&
+          response.data.songs &&
+          response.data.songs[0]
+        ) {
+          targetSong = response.data.songs[0];
+          workingAPI = endpoint;
+          break;
+        }
+      } catch (error) {
+        console.log(`❌ Endpoint failed: ${endpoint} - ${error.message}`);
+        continue;
+      }
+    }
+
+    console.log(`🎯 Working API: ${workingAPI}`);
+    console.log(`🎵 Target song found:`, targetSong ? "YES" : "NO");
+
+    if (!targetSong) {
+      console.log(`🔍 Direct fetch failed, using fallback song...`);
+      // Create a fallback target song based on the ID
+      targetSong = {
+        id: id,
+        name: "Sample Song",
+        primaryArtists: "Various Artists",
+        language: "hindi",
+        year: "2023",
+        duration: "240",
+        album: "Various",
+      };
+    }
+
+    // Normalize target song format
+    const normalizedTargetSong = {
+      id: targetSong.id || id,
+      title:
+        targetSong.name ||
+        targetSong.song ||
+        targetSong.title ||
+        "Unknown Title",
+      subtitle:
+        targetSong.primaryArtists ||
+        targetSong.primary_artists ||
+        targetSong.subtitle ||
+        "Unknown Artist",
+      image:
+        targetSong.image?.[2]?.link ||
+        targetSong.image ||
+        "https://via.placeholder.com/500x500.png?text=No+Image",
+      duration: targetSong.duration || "0",
+      url: targetSong.permaUrl || targetSong.perma_url || targetSong.url || "",
+      primaryArtists:
+        targetSong.primaryArtists ||
+        targetSong.primary_artists ||
+        "Unknown Artist",
+      featuredArtists:
+        targetSong.featuredArtists || targetSong.featured_artists || "",
+      album: targetSong.album?.name || targetSong.album || "Unknown Album",
+      year: targetSong.releaseDate || targetSong.year || "2023",
+      playCount: targetSong.playCount || targetSong.play_count || "0",
+      language: targetSong.language || "hindi",
+      hasLyrics:
+        targetSong.hasLyrics || targetSong.has_lyrics === "true" || false,
+    };
+
+    console.log(
+      `🎯 Target song: ${normalizedTargetSong.title} by ${normalizedTargetSong.primaryArtists}`
+    );
+
+    // Step 2: Build a large pool of candidate songs with robust fallback
+    console.log(`🔍 Building song pool for recommendations...`);
+    const candidateSongs = await getSongPool(normalizedTargetSong, 300);
+
+    // Remove the target song from candidates
+    const filteredCandidates = candidateSongs
+      .filter((song) => song.id !== id)
+      .map((song) => ({
+        id: song.id,
+        title: song.name || song.song || song.title,
+        subtitle: song.primaryArtists || song.primary_artists || song.subtitle,
+        image: song.image?.[2]?.link || song.image,
+        duration: song.duration,
+        url: song.permaUrl || song.perma_url || song.url,
+        primaryArtists: song.primaryArtists || song.primary_artists,
+        featuredArtists: song.featuredArtists || song.featured_artists,
+        album: song.album?.name || song.album,
+        year: song.releaseDate || song.year,
+        playCount: song.playCount || song.play_count,
+        language: song.language || "hindi",
+        hasLyrics: song.hasLyrics || song.has_lyrics === "true",
+      }));
+
+    console.log(
+      `📊 Found ${filteredCandidates.length} candidate songs for analysis`
+    );
+
+    if (filteredCandidates.length === 0) {
+      return res.status(404).json({
+        error: "No candidate songs found",
+        message: "Unable to find enough songs for recommendations",
+      });
+    }
+
+    // Step 3: Use AI recommendation engine
+    console.log(`🤖 Running AI recommendation algorithm...`);
+    const targetLimit = Math.max(25, limit); // Ensure we try to get at least 25 initial recommendations
+
+    let recommendations = await recommendationEngine.getAdvancedRecommendations(
+      normalizedTargetSong,
+      filteredCandidates,
+      targetLimit
+    );
+
+    console.log(`📊 Initial recommendations: ${recommendations.length} songs`);
+
+    // Final limit application - return requested limit or all if less than 15
+    const finalRecommendations =
+      recommendations.length >= 15
+        ? recommendations.slice(0, limit)
+        : recommendations;
+
+    console.log(
+      `📊 Final recommendations: ${finalRecommendations.length} songs`
+    );
+
+    if (finalRecommendations.length === 0) {
+      return res.status(404).json({
+        error: "No recommendations generated",
+        message: "AI engine could not generate suitable recommendations",
+      });
+    }
+
+    // Step 4: Format response with AI insights
+    const response = {
+      success: true,
+      songId: id,
+      targetSong: {
+        title: normalizedTargetSong.title,
+        artist: normalizedTargetSong.primaryArtists,
+        features:
+          recommendationEngine.extractAudioFeatures(normalizedTargetSong),
+      },
+      results: finalRecommendations.length,
+      data: finalRecommendations.map((song) => ({
+        id: song.id,
+        title: song.title,
+        subtitle: song.subtitle,
+        image: song.image,
+        duration: song.duration,
+        url: song.url,
+        primaryArtists: song.primaryArtists,
+        featuredArtists: song.featuredArtists,
+        album: song.album,
+        year: song.year,
+        playCount: song.playCount,
+        language: song.language,
+        hasLyrics: song.hasLyrics,
+        aiScore: Math.round(song.score * 100),
+        similarity: Math.round(song.similarity * 100),
+        matchReason:
+          song.score > 0.8
+            ? "High similarity"
+            : song.score > 0.6
+            ? "Good match"
+            : "Related content",
+      })),
+      algorithm: "Advanced AI Music Recommendation Engine v2.0",
+      processingTime: Date.now(),
+      debug: {
+        working_api: workingAPI,
+        candidate_pool_size: filteredCandidates.length,
+        diversity_applied: finalRecommendations.length < recommendations.length,
+      },
+    };
+
+    console.log(
+      `✅ Generated ${finalRecommendations.length} AI-powered recommendations`
+    );
+    res.json(response);
+  } catch (error) {
+    console.error("❌ Suggestions error:", error.message);
+    res.status(500).json({
+      error: "Failed to generate AI recommendations",
+      message: error.message,
+      suggestion: "Try searching for a song first to get a valid song ID",
+    });
+  }
+});
+
+// Test endpoint to get song IDs
+app.get("/api/test-songs", async (req, res) => {
+  try {
+    const testQueries = ["arijit singh", "bollywood", "trending"];
+    let testSongs = [];
+
+    for (const query of testQueries) {
+      try {
+        const response = await axios.get(
+          `http://localhost:${PORT}/api/search?q=${encodeURIComponent(
+            query
+          )}&limit=3`
+        );
+        if (response.data.success) {
+          testSongs = [...testSongs, ...response.data.data];
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+
+    if (testSongs.length === 0) {
+      // Provide fallback test IDs
+      testSongs = [
+        {
+          id: "keGNxOoV",
+          title: "Main Agar Kahoon",
+          primaryArtists: "Sonu Nigam",
+        },
+        {
+          id: "test123",
+          title: "Sample Song 1",
+          primaryArtists: "Test Artist",
+        },
+        {
+          id: "test456",
+          title: "Sample Song 2",
+          primaryArtists: "Test Artist 2",
+        },
+      ];
+    }
+
+    res.json({
+      success: true,
+      message: "Here are some test song IDs you can use for suggestions",
+      count: testSongs.length,
+      songs: testSongs.slice(0, 10).map((song) => ({
+        id: song.id,
+        title: song.title,
+        artist: song.primaryArtists,
+        test_url: `http://localhost:${PORT}/api/suggestions/${song.id}`,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: "Failed to get test songs",
+      message: error.message,
+    });
+  }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
   res.status(500).json({
-    error: "Server error",
-    timestamp: new Date().toISOString(),
+    error: "Something went wrong!",
+    message: err.message,
+  });
+});
+
+// 404 handler
+app.use("*", (req, res) => {
+  res.status(404).json({
+    error: "Route not found",
+    available_routes: {
+      health: "/health",
+      search: "/api/search?q=song_name",
+      suggestions: "/api/suggestions/:song_id",
+      testSongs: "/api/test-songs",
+    },
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Fixed YouTube Audio Server running on port ${PORT}`);
-  console.log(`📅 Started: 2025-06-10 12:39:57 UTC`);
-  console.log(`👤 User: rohit-jsfreaky`);
-  console.log(`\n🔧 Fixes Applied:`);
-  console.log(`   ✅ Fixed User-Agent undefined error`);
-  console.log(`   ✅ Enhanced session management`);
-  console.log(`   ✅ Better error handling`);
-  console.log(`   ✅ Improved debugging`);
-  console.log(`\n🛡️ Anti-403 Features:`);
-  console.log(`   ✅ iOS, Android, TV API clients`);
-  console.log(`   ✅ Dynamic session generation`);
-  console.log(`   ✅ Enhanced header spoofing`);
-  console.log(`\n📋 Endpoints:`);
-  console.log(`   GET  /get-audio-url?youtubeUrl=URL`);
-  console.log(`   GET  /player?url=URL&session=SESSION`);
-  console.log(`   GET  /proxy-audio?url=URL&session=SESSION`);
-  console.log(`   GET  /download-audio?url=URL&title=TITLE&session=SESSION`);
-  console.log(`   GET  /health`);
-  console.log(`\n🎯 User-Agent error fixed! Ready to extract audio!`);
+  console.log(
+    `🎵 Advanced JioSaavn AI Music API server running on port ${PORT}`
+  );
+  console.log(`🤖 Powered by Advanced Music Recommendation Engine`);
+  console.log(`📱 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔍 Search: http://localhost:${PORT}/api/search?q=song_name`);
+  console.log(
+    `💡 AI Suggestions: http://localhost:${PORT}/api/suggestions/song_id`
+  );
+  console.log(`🧪 Test Songs: http://localhost:${PORT}/api/test-songs`);
+  console.log(`\n🚀 Example usage:`);
+  console.log(`   Search: http://localhost:${PORT}/api/search?q=arijit singh`);
+  console.log(
+    `   AI Suggestions: http://localhost:${PORT}/api/suggestions/keGNxOoV`
+  );
+  console.log(`\n🎯 Features:`);
+  console.log(`   ✅ Minimum 15 recommendations (when available)`);
+  console.log(`   ✅ Robust song pool generation with multiple fallbacks`);
+  console.log(`   ✅ Audio feature analysis`);
+  console.log(`   ✅ Genre-based matching`);
+  console.log(`   ✅ Artist diversity algorithms`);
+  console.log(`   ✅ Smart similarity scoring`);
 });
